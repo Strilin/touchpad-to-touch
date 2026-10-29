@@ -1,0 +1,12 @@
+__pycache__/
+build/
+dist/
+*.spec
+*.zip
+touchpad_log.txt
+inject_log.txt
+selftest_log.txt
+touch_window_*.txt
+touchpad_to_touch_error.txt
+CLAUDE.md
+tablet_props.py
