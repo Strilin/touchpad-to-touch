@@ -4,10 +4,14 @@
 # from the device's own HID descriptor, so any size / resolution of Precision Touchpad works.
 #
 # Runs invisibly (no window). Usage:
-#   python touchpad_to_touch.py [seconds] [--keep-aspect] [--log]
+#   python touchpad_to_touch.py [seconds] [--keep-aspect] [--log] [--parent PID] [--quiet]
 #   seconds:        quit after this many seconds (default 0 = run until stopped)
 #   --keep-aspect:  keep the pad's aspect ratio (centered) instead of stretching it to the screen
 #   --log:          write finger down / up events to inject_log.txt
+#   --parent PID:   quit when the process PID ends (a program that starts this one, e.g. Letter Learner,
+#                   so it stops even if that program crashes)
+#   --quiet:        no start / stop beeps, and no beeps if it is already running (the starting program
+#                   tells the user itself); the error beeps stay
 # Sounds: one high beep = started; one low beep = stopped (Ctrl+Alt+Shift+Q or time limit);
 # two short beeps = already running; three low beeps = error (e.g. no Precision Touchpad).
 # Can also be stopped from Task Manager (then without a sound).
@@ -44,6 +48,9 @@ SM_CXSCREEN, SM_CYSCREEN = 0, 1
 RIDI_DEVICEINFO = 0x2000000B
 ERROR_ALREADY_EXISTS = 183
 MUTEX_NAME = "Local\\TouchpadToTouch"
+PARENT_TIMER_ID = 2
+SYNCHRONIZE = 0x00100000
+WAIT_TIMEOUT = 0x102
 
 
 class POINTER_INFO(ctypes.Structure):
@@ -76,6 +83,10 @@ user32.GetRawInputDeviceList.argtypes = [ctypes.c_void_p, ctypes.POINTER(wt.UINT
 user32.GetRawInputDeviceList.restype = wt.UINT
 kernel32.CreateMutexW.argtypes = [wt.LPVOID, wt.BOOL, wt.LPCWSTR]
 kernel32.CreateMutexW.restype = wt.HANDLE
+kernel32.OpenProcess.argtypes = [wt.DWORD, wt.BOOL, wt.DWORD]
+kernel32.OpenProcess.restype = wt.HANDLE
+kernel32.WaitForSingleObject.argtypes = [wt.HANDLE, wt.DWORD]
+kernel32.WaitForSingleObject.restype = wt.DWORD
 
 # Next to the .exe when packaged with PyInstaller, next to the script otherwise.
 APP_DIR = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else tp.SCRIPT_DIR
@@ -247,15 +258,30 @@ class Injector:
                 log(f"ERROR: InjectTouchInput failed, Windows error code {ctypes.get_last_error()}")
 
 
+def option_value(name):
+    """The value after an option (e.g. --parent 1234), or None."""
+    argv = sys.argv[1:]
+    return argv[argv.index(name) + 1] if name in argv and argv.index(name) + 1 < len(argv) else None
+
+
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    parent_arg = option_value("--parent")
+    args = [a for a in sys.argv[1:] if not a.startswith("--") and a != parent_arg]
     seconds = float(args[0]) if args else 0.0
     keep_aspect = "--keep-aspect" in sys.argv
+    quiet = "--quiet" in sys.argv
+    # the process that started us: stop when it ends (a handle that becomes signaled when the process exits)
+    parent = None
+    if parent_arg:
+        parent = kernel32.OpenProcess(SYNCHRONIZE, False, int(parent_arg))
+        if not parent:
+            return  # it has already ended
 
     mutex = kernel32.CreateMutexW(None, False, MUTEX_NAME)
     if ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
         say("Already running.")
-        beeps(1000, 70, 2)
+        if not quiet:
+            beeps(1000, 70, 2)
         return
     if not has_precision_touchpad():
         raise RuntimeError("No Precision Touchpad found.")
@@ -282,6 +308,11 @@ def main():
                     injector.on_report(dev, report)
             except Exception as e:
                 log(f"ERROR: {e!r}")
+        elif msg == tp.WM_TIMER and wparam == PARENT_TIMER_ID:
+            if kernel32.WaitForSingleObject(parent, 0) != WAIT_TIMEOUT:
+                log("The parent process ended.")
+                user32.DestroyWindow(hwnd)
+            return 0
         elif msg in (tp.WM_TIMER, WM_HOTKEY):
             user32.DestroyWindow(hwnd)
             return 0
@@ -295,11 +326,14 @@ def main():
         raise RuntimeError("Ctrl+Alt+Shift+Q is already used by another program.")
     if seconds > 0:
         user32.SetTimer(hwnd, 1, int(seconds * 1000), None)
+    if parent:
+        user32.SetTimer(hwnd, PARENT_TIMER_ID, 500, None)
     if tp.log_file:
         tp.log_file.flush()
     limit = f" for {seconds:g} seconds" if seconds > 0 else ""
     say(f"Touchpad -> touch running{limit}. Stop: Ctrl+Alt+Shift+Q.")
-    winsound.Beep(1200, 150)
+    if not quiet:
+        winsound.Beep(1200, 150)
     try:
         tp.message_loop()
     finally:
@@ -307,7 +341,8 @@ def main():
         log(f"Exit. Injection errors: {injector.errors}")
         if tp.log_file:
             tp.log_file.close()
-        winsound.Beep(600, 250)
+        if not quiet:
+            winsound.Beep(600, 250)
     say("Stopped.")
 
 
