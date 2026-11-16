@@ -30,7 +30,7 @@ Download `TouchpadToTouch.zip` from the [Releases](../../releases) page and run
 `TouchpadToTouch.exe` (no Python needed), or run the script:
 
 ```
-python touchpad_to_touch.py [seconds] [--keep-aspect] [--log]
+python touchpad_to_touch.py [seconds] [--keep-aspect] [--log] [--parent PID] [--quiet]
 ```
 
 It runs invisibly in the background (no window).
@@ -39,6 +39,10 @@ It runs invisibly in the background (no window).
 - `--keep-aspect`: keep the pad's aspect ratio (centered on the screen) instead of stretching
   the pad over the whole screen.
 - `--log`: write finger down / up events to `inject_log.txt`.
+- `--parent PID`: quit when the process `PID` ends. For a program that starts TouchpadToTouch
+  for itself (e.g. Letter Learner): it stops even if that program crashes.
+- `--quiet`: no start / stop beeps, and silently quits if it is already running (the starting
+  program tells the user itself). The error beeps stay.
 - Stop with **Ctrl+Alt+Shift+Q**, or end the process in Task Manager.
   (Not Ctrl+Alt+Q: that is AltGr+Q, which types `\` on many keyboard layouts.)
 
