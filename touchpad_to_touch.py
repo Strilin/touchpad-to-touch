@@ -126,7 +126,10 @@ def has_precision_touchpad():
 
 def say(text):
     if sys.stdout:  # there is no console in the windowed .exe
-        print(text, flush=True)
+        try:
+            print(text, flush=True)
+        except (OSError, ValueError):  # started by another program (--parent): its stdout handle may be unusable (Errno 22)
+            pass
 
 
 def beeps(freq, ms, count):

@@ -10,3 +10,4 @@ touch_window_*.txt
 touchpad_to_touch_error.txt
 CLAUDE.md
 tablet_props.py
+dist_new/
